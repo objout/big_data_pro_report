@@ -10,7 +10,7 @@
 
 \begin{figure}[H]
   \begin{center}
-    \includegraphics[width=0.95\textwidth]{./figures/蚂蚁2-1-728694.png}
+    \includegraphics[width=0.70\textwidth]{./figures/蚂蚁2-1-728694.png}
   \end{center}
   \caption{The LDBC FinBench data schema}
 \end{figure}
@@ -33,10 +33,10 @@
     \end{enumerate}
 \end{itemize}
 
-\subsection{交易闭环搜索问题}
+\subsection{交易闭环搜索问题} \label{pro1}
 \begin{figure}[H]
   \begin{center}
-    \includegraphics[width=0.95\textwidth]{./figures/蚂蚁改5-264319.png}
+    \includegraphics[width=0.65\textwidth]{./figures/蚂蚁改5-264319.png}
   \end{center}
   \caption{交易闭环搜索}
 \end{figure}
@@ -55,10 +55,10 @@
     \end{enumerate}
 \end{itemize}
 
-\subsection{资金快进快出问题}
+\subsection{资金快进快出问题} \label{pro2}
 \begin{figure}[H]
   \begin{center}
-    \includegraphics[width=0.95\textwidth]{./figures/蚂蚁改6-546936.png}
+    \includegraphics[width=0.65\textwidth]{./figures/蚂蚁改6-546936.png}
   \end{center}
   \caption{资金快进快出}
 \end{figure}
@@ -73,6 +73,49 @@
     \begin{enumerate}
       \item id：满足目标条件的 mid.id。
       \item value：交易流入流出比，SUM(edge1.amount) / SUM(edge2.amount)，小数点后保留2位有效数字。
+    \end{enumerate}
+\end{itemize}
+
+\subsection{担保金额汇总问题} \label{pro3}
+\begin{figure}[H]
+  \begin{center}
+    \includegraphics[width=0.65\textwidth]{./figures/蚂蚁改7-686551.png}
+  \end{center}
+  \caption{担保金额汇总}
+\end{figure}
+
+\begin{itemize}
+  \item 目标: 匹配满足以下条件的所有人 p1:
+    \begin{enumerate}
+      \item 找到 p1 下游担保链上的所有人 p，至少 1 级，至多 3 级。
+      \item 找到p申请的贷款信息，汇总贷款⾦额。
+    \end{enumerate}
+  \item 输出
+    \begin{enumerate}
+      \item id：满足目标条件的 p1.id。
+      \item value：汇总贷款，SUM(loan.loanAmount)，单位（亿），小数点后保留2位有效数字。
+    \end{enumerate}
+\end{itemize}
+
+\subsection{个人贷款统计问题} \label{pro4}
+\begin{figure}[H]
+  \begin{center}
+    \includegraphics[width=0.65\textwidth]{./figures/蚂蚁改4-331116.png}
+  \end{center}
+  \caption{个人贷款统计}
+\end{figure}
+
+\begin{itemize}
+  \item 目标: 匹配满足以下条件的所有person:
+    \begin{enumerate}
+      \item 找到 person 拥有的账户 account（edge1: own）。
+      \item 账户 account 从其他账户 other 转入资金色（edge2: transfer）。
+      \item 账户 other 从贷款loan中存入资金（edge3: deposit），至少一条。
+    \end{enumerate}
+  \item 输出
+    \begin{enumerate}
+      \item id：满足目标条件的persion.id。
+      \item value：贷款金额（loan.loanAmount）总和，单位（亿），小数点后保留2位有效数字。
     \end{enumerate}
 \end{itemize}
 

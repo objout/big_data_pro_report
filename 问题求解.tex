@@ -1,0 +1,287 @@
+\section{问题求解}
+\subsection{开发环境搭建}
+\begin{itemize}
+  \item 安装 JDK8(GeaFlow 目前只支持 JDK8), 包括配置相应的环境变量.
+  \item 安装 Maven, 包括配置相应的环境变量.
+  \item 安装任意可以编写代码的文本编辑器.
+  \item 下载数据集到本地磁盘.
+\end{itemize}
+
+添加 Maven 坐标(完整配置可见项目源码的 pom.xml 文件):
+\begin{center}
+\begin{minted}[xleftmargin=5mm]{xml}
+<dependency>
+    <groupId>com.antgroup.tugraph</groupId>
+    <artifactId>geaflow-api</artifactId>
+    <version>0.3</version>
+</dependency>
+
+<dependency>
+    <groupId>com.antgroup.tugraph</groupId>
+    <artifactId>geaflow-pdata</artifactId>
+    <version>0.3</version>
+</dependency>
+
+<dependency>
+    <groupId>com.antgroup.tugraph</groupId>
+    <artifactId>geaflow-cluster</artifactId>
+    <version>0.3</version>
+</dependency>
+
+<dependency>
+    <groupId>com.antgroup.tugraph</groupId>
+    <artifactId>geaflow-on-local</artifactId>
+    <version>0.3</version>
+</dependency>
+
+<dependency>
+    <groupId>com.antgroup.tugraph</groupId>
+    <artifactId>geaflow-pipeline</artifactId>
+    <version>0.3</version>
+</dependency>
+\end{minted}
+\end{center}
+
+打包:
+\begin{center}
+\begin{minted}[xleftmargin=5mm]{bash}
+mvn clean package -DskipTests
+\end{minted}
+\end{center}
+
+运行:
+\begin{center}
+\begin{minted}[xleftmargin=5mm]{bash}
+$JAVA_HOME/bin/java -jar target/*.jar 数据集路径 结果文件路径
+\end{minted}
+\end{center}
+
+\subsection{通用的类和函数}
+由于问题是基于 GeaFlow API 进行图构建和计算的, 对于不同的问题,
+仅仅是点和边的数据发生改变, 构图的 API 是相似的, 为此我们抽象出
+求解各个问题的通用类和函数.
+
+\subsubsection{图输入}
+具体输入数据的格式可见问题描述一节, 此处不再赘述.
+相关依赖的导入请见相关源码文件, 此处为避免篇幅过长, 故省略之.
+
+\begin{center}
+\begin{minted}[xleftmargin=5mm]{java}
+package org.graphpatmatch.yyds.utils;
+
+public class FileSource<OUT>
+  extends RichFunction implements SourceFunction<OUT> {
+  // 文件名
+  protected String filePath;
+  // 输入文件的路径
+  public static final String INPUT_DIR = "input.dir";
+  // 读入的数据
+  protected List<OUT> records;
+  protected Integer readPos = null;
+  // 读入数据的解析器
+  protected FileLineParser<OUT> parser;
+  protected transient RuntimeContext runtimeContext;
+
+  public FileSource(String filePath, FileLineParser<OUT> parser) {
+    this.filePath = filePath;
+    this.parser = parser;
+  }
+
+  @Override
+  public void open(RuntimeContext runtimeContext) {
+    this.runtimeContext = runtimeContext;
+    filePath = String.format("%s/%s",
+        runtimeContext.getConfiguration().getString("input.dir"), filePath);
+  }
+
+  @Override
+  public void init(int parallel, int index) {
+    this.records = readFileLines(filePath);
+    if (parallel != 1) {
+      List<OUT> allRecords = records;
+      records = new ArrayList<>();
+      for (int i = 0; i < allRecords.size(); i++) {
+        if (i % parallel == index) {
+          records.add(allRecords.get(i));
+        }
+      }
+    }
+  }
+
+  @Override
+  public boolean fetch(IWindow<OUT> window, SourceContext<OUT> ctx)
+    throws Exception {
+    if (readPos == null) {
+      readPos = 0;
+    }
+    while (readPos < records.size()) {
+      OUT out = records.get(readPos);
+      long windowId = window.assignWindow(out);
+      if (window.windowId() == windowId) {
+        ctx.collect(out);
+        readPos++;
+      } else {
+        break;
+      }
+    }
+    boolean result = false;
+    if (readPos < records.size()) {
+      result = true;
+    }
+    return result;
+  }
+
+  // 以行为单位读入数据
+  private List<OUT> readFileLines(String filePath) {
+    try {
+      List<String> lines = Files.readLines(new File(filePath),
+          Charset.defaultCharset());
+      List<OUT> result = new ArrayList<>();
+
+      // 过滤掉首行(header)
+      lines.remove(0);
+
+      for (String line : lines) {
+        if (StringUtils.isBlank(line)) {
+          continue;
+        }
+        Collection<OUT> collection = parser.parse(line);
+        result.addAll(collection);
+      }
+      return result;
+    } catch (IOException e) {
+      throw new RuntimeException("error in read resource file: " + filePath, e);
+    }
+  }
+
+  public interface FileLineParser<OUT> extends Serializable {
+    Collection<OUT> parse(String line);
+  }
+}
+\end{minted}
+\end{center}
+
+\subsubsection{图输出}
+\begin{center}
+\begin{minted}[xleftmargin=5mm]{java}
+package org.graphpatmatch.yyds.utils;
+
+public class FileSink<OUT>
+  extends RichFunction implements SinkFunction<OUT> {
+  // 输出文件路径
+  public static final String OUTPUT_DIR = "output.dir";
+  // 输出文件名
+  public static final String OUTPUT_FILE = "output.file";
+  public static final String FILE_OUTPUT_APPEND_ENABLE = "file.append.enable";
+  private Boolean first = false;
+  private File file;
+
+  public FileSink() {
+  }
+
+  @Override
+  public void open(RuntimeContext runtimeContext) {
+    String filePath = String.format("%s/%s",
+        runtimeContext.getConfiguration().getString(OUTPUT_DIR),
+        runtimeContext.getConfiguration().getString(OUTPUT_FILE));
+
+    boolean append = runtimeContext.getConfiguration()
+      .getBoolean(new ConfigKey(FILE_OUTPUT_APPEND_ENABLE, true));
+    file = new File(filePath);
+
+    // 若指定的文件不存在, 则创建之
+    try {
+      if (!append && file.exists()) {
+        try {
+          FileUtils.forceDelete(file);
+        } catch (Exception e) {
+          // ignore
+        }
+      }
+
+      if (!file.exists()) {
+        if (!file.getParentFile().exists()) {
+          file.getParentFile().mkdirs();
+        }
+        file.createNewFile();
+      }
+    } catch (IOException e) {
+      throw new GeaflowRuntimeException(e);
+    }
+  }
+
+  @Override
+  public void write(OUT out) throws Exception {
+    try {
+      // 写入首行(header)
+      if (!first) {
+        FileUtils.write(file, "id|value\n", Charset.defaultCharset(), true);
+        first = true;
+      }
+      // 逐行写入
+      FileUtils.write(file, out + "\n", Charset.defaultCharset(), true);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+}
+\end{minted}
+\end{center}
+
+\subsubsection{输出排序}
+结果文件要求输出按照 id 的数值大小进行升序排序, 我们在此处说明排序的逻辑.
+
+\begin{center}
+\begin{minted}[xleftmargin=5mm]{java}
+package org.graphpatmatch.yyds.utils;
+
+public class FileSort {
+  public static void sort(String TMP_FILE, String RESULT_FILE) {
+    try {
+      // 中间文件
+      File fin = new File(TMP_FILE);
+      // 结果文件
+      File fout = new File(RESULT_FILE);
+
+      FileInputStream fis = new FileInputStream(fin);
+      FileOutputStream fos = new FileOutputStream(fout);
+
+      BufferedReader in = new BufferedReader(new InputStreamReader(fis));
+      BufferedWriter out = new BufferedWriter(new OutputStreamWriter(fos));
+
+      String aLine;
+      // 有序映射, <id, value>: <BigInteger, String>
+      SortedMap<BigInteger, String> sortedMap = new TreeMap<BigInteger, String>();
+
+      in.readLine(); // Skip the first line(header)
+      while ((aLine = in.readLine()) != null) {
+        if (aLine.trim().length() > 0) { // 非空行
+          // split() 根据正则表达式进行分割, | 是正则表达式的元字符, 故需转义
+          sortedMap.put(new BigInteger(aLine.split("\\|")[0]), aLine);
+        }
+      }
+
+      out.write("id|value\n"); // Write header
+      Set<Entry<BigInteger, String>> entries = sortedMap.entrySet();
+      for (Entry<BigInteger, String> entry : entries) {
+        out.write(entry.getValue() + "\n");
+      }
+
+      in.close();
+      out.close();
+      // 删除临时文件
+      FileUtils.forceDelete(new File(TMP_FILE));
+    } catch (IOException e) {
+    }
+  }
+}
+\end{minted}
+\end{center}
+
+程序运行时环境的初始化和参数配置请见源码, 以下仅描述
+构图过程和核心算法.
+
+\input{./cases/case2.tex}
+\input{./cases/case3.tex}
+\input{./cases/case4.tex}
+\input{./cases/case1.tex}

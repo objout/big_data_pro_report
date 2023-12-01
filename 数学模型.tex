@@ -1,7 +1,48 @@
 \section{数学模型}
 
 \subsection{图的抽象}
-% TODO:
+\subsubsection{图论的开创}
+1736 年, 欧拉(Euler) 利用图的模型完美而彻底地解决了哥尼斯堡七桥问题,
+因此欧拉也被认为是图论和拓扑学的开山祖师.
+
+哥尼斯堡七桥问题是这样的:
+
+A, B, C, D 是四块陆地, 这四块陆地通过 $ 7 $ 座桥相连, 陆地和桥的分布可见下图:
+\begin{figure}[H]
+  \begin{center}
+    \includegraphics[width=0.3\textwidth]{./figures/bridge.png}
+  \end{center}
+  \caption{哥尼斯堡七桥问题现实模型}
+\end{figure}
+
+需要寻找方案(如果有的话)满足: 从某一块陆地出发,
+经过每座桥且恰好经过一次并回到出发点.
+
+欧拉通过用``点''表示陆地, 用``边''表示桥, 抽象出图的模型.
+\begin{figure}[H]
+  \begin{center}
+    \includegraphics[width=0.2\textwidth]{./figures/bridge_graph.png}
+  \end{center}
+  \caption{哥尼斯堡七桥问题抽象模型}
+\end{figure}
+
+欧拉利用图的模型成功地证明了这个问题是不存在任何一种方案的.
+但欧拉并不满足于此, 他还研究了什么样的图是存在这样的方案的(欧拉图),
+这种做学问的精神是值得我们学习的, 关于欧拉图的进一步讨论可见有关的图论教材,
+如\cite{ref5}, 这不在本文的讨论范围内.
+
+\subsubsection{图的定义}
+图(graph) $ G $ 定义为 $ G=(V, E) $, 其中 $ V $, $ E $ 是集合且
+$ E \subseteq V\times V $. $ V $ 中的元素称作 $ G $ 的点(vertex), $ E $ 中的元素
+称作 $ G $ 的边(edge). $ G $ 的点集记作 $ V(G) $, $ G $ 的边集记作 $ E(G) $.
+
+对 $ x, y\in V(G) $, 边 $ \{x, y\} \in E(G) $记作$ xy $.
+若 $ xy \in E(G) $, 则称点 $ x $ 和点 $ y $ 是相邻的(adjacent), 或称
+点 $ x $ 和点 $ y $ 互为邻居(neighbors).
+
+若图 $ G $ 的任意两点之间都是相邻的(pairwise adjacent), 则称 $ G $
+是完全图(complete graph). 有 $ n $ 个点的完全图记作 $ K^{n} $, $ K^{3} $
+称作三角形(triangle).
 
 \subsection{名称解释}
 \begin{itemize}

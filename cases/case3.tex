@@ -1,0 +1,121 @@
+\subsection{资金快进快出问题}
+具体问题描述可见 \ref{pro2} 资金快进快出问题一节.
+
+此问题涉及的数据文件有:
+\begin{itemize}
+  \item Account.csv(点)
+  \item AccountTransferAccount.csv(边)
+\end{itemize}
+
+\subsubsection{输入}
+\begin{center}
+\begin{minted}[xleftmargin=5mm]{java}
+// 构建点
+PWindowSource<IVertex<String, String>> vertices = pipelineTaskCxt
+  .buildSource(
+    new FileSource<IVertex<String, String>>(
+      "Account.csv",
+      line -> {
+        String[] fields = line.split("\\|");
+        // <vertexKey, vertexValue>: <String, String>
+        // 此处以 Account 的 Id 作为点的 Id,
+        IVertex<String, String> vertex = new ValueVertex<String, String>(
+          fields[0], "");
+        return Collections.singletonList(vertex);
+    }),
+    AllWindow.getInstance())
+  .withParallelism(sourceParallelism);
+
+// 构建边
+PWindowSource<IEdge<String, Double>> edges = pipelineTaskCxt
+  .buildSource(
+    new FileSource<IEdge<String, Double>>(
+      "AccountTransferAccount.csv",
+      line -> {
+        String[] fields = line.split("\\|");
+        // <vertexKey, edgeValue>: <String, Double>
+        // 此处以 Account 的 Id 作为点的 Id
+        IEdge<String, Double> edge = new ValueEdge<String, Double>(
+          fields[0], fields[1], Double.parseDouble(fields[2]));
+        // (srcId, targetId, edgeValue)
+        return Collections.singletonList(edge);
+      }),
+      AllWindow.getInstance())
+  .withParallelism(sourceParallelism);
+
+// 构造图视图(用于将构造出的点和边关联起来)
+GraphViewDesc graphViewDesc = GraphViewBuilder
+  .createGraphView(GraphViewBuilder.DEFAULT_GRAPH)
+  .withShardNum(iterationParallelism)
+  .withBackend(BackendType.Memory)
+  .build();
+\end{minted}
+\end{center}
+
+\subsubsection{核心算法}
+
+此问题中涉及到的图记作 $ G $, 对一个点 $ v \in V(G) $,
+\begin{enumerate}
+  \item 找到 $ v $ 的所有入边 $ wv \in E(G), w \in V(G) $(至少一条),
+    对所有入边的值求和 $ M=\sum_{i=1}^{m} val(w_iv) $, 其中的 $ m $ 是 $ v $
+    的入边的数量, $ val(w_iv) $ 是 $ v $ 的入边 $ w_iv $ 的值;
+  \item 找到 $ v $ 的所有出边 $ vx \in E(G), x \in V(G) $(至少一条),
+    对所有出边的值求和 $ N=\sum_{j=1}^{n} val(vx_j)$, 其中 $ n $ 是 $ v $
+    的出边的数量, $ val(vx_i) $ 是 $ v $ 的出边 $ vx_i $ 的值;
+  \item 得到结果 $ M / N $.
+\end{enumerate}
+
+\begin{center}
+\begin{minted}[xleftmargin=5mm]{java}
+public void compute(
+  String vertexId, Iterator<Double> messageIterator) {
+  List<IEdge<String, Double>> edges = this.context.edges().getOutEdges();
+
+  // 第一轮迭代向所有出边的目标点发送边值
+  if (this.context.getIterationId() == 1L) {
+    for (IEdge<String, Double> edge : edges) {
+      this.context.sendMessage(edge.getTargetId(), edge.getValue());
+    }
+  } else {
+    // 第二轮迭代接收发来的信息
+    double in_sum = 0.0, out_sum = 0.0;
+
+    while (messageIterator.hasNext()) {
+      Double msg = messageIterator.next();
+      in_sum += msg;
+    }
+    if (in_sum == 0.0)
+      return;
+
+    for (IEdge<String, Double> edge : edges) {
+      out_sum += edge.getValue();
+    }
+    if (out_sum != 0.0) {
+      double res = in_sum / out_sum;
+      String resStr = "";
+      resStr = String.format("%.2f", res);
+      this.context.setNewVertexValue(resStr);
+    }
+  }
+}
+\end{minted}
+\end{center}
+
+\subsubsection{输出}
+\begin{center}
+\begin{minted}[xleftmargin=5mm]{java}
+PWindowStream<IVertex<String, String>> result = pipelineTaskCxt
+  .buildWindowStreamGraph(vertices, edges, graphViewDesc)
+  .compute(new Case3Algorithms(2)) // 进行 2 轮迭代
+  .compute(iterationParallelism)
+  .getVertices();
+
+SinkFunction<String> sink = ExampleSinkFunctionFactory.getSinkFunction(conf);
+result
+  .filter(v -> !v.getValue().equals("")) // // 过滤出符合要求的点
+  .map(v -> String.format("%s|%s", v.getId(), v.getValue()))
+  .withParallelism(mapParallelism)
+  .sink(sink) // 写入文件
+  .withParallelism(sinkParallelism);
+\end{minted}
+\end{center}
